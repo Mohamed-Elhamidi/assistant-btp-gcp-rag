@@ -1,0 +1,17 @@
+# Environnement virtuel
+.venv/
+venv/
+ENV/
+
+# Variables d'environnement et secrets
+.env
+
+# Fichiers temporaires Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE & Editeurs
+.vscode/
+.idea/
+*.swp
