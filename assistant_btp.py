@@ -1,36 +1,71 @@
-import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from google.genai.errors import ServerError
+from rag_btp import construire_contexte_rag
 
-# Charge les variables d'environnement depuis le fichier .env (ex: GEMINI_API_KEY)
+# Charge GEMINI_API_KEY depuis le fichier .env
 load_dotenv()
 
-# Initialise le client Gemini (il lit automatiquement GEMINI_API_KEY dans l'environnement)
+# Initialise le client Gemini
 client = genai.Client()
 
-# Instruction système : définit le rôle, le ton et les limites de l'assistant BTP
+MODELES_CANDIDATS = [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+]
+
 SYSTEM_INSTRUCTION = """
 Tu es un assistant technique spécialisé dans le secteur du BTP (Bâtiment et Travaux Publics) en France.
-Ton objectif est d'aider les professionnels et apprentis sur les bonnes pratiques, la prévention des risques et les normes de sécurité sur chantier.
+Ton objectif est d'aider les professionnels et apprentis sur les bonnes pratiques, la prévention des risques et les normes de sécurité chantier.
 
 Règles strictes :
-1. Réponds en français clair, structuré et actionnable (points clés, EPI, mesures de prévention).
-2. Ne jamais inventer de texte de loi, d'article du Code du travail ou de norme : si une donnée précise manque, indique-le clairement.
-3. Rappelle toujours de vérifier les consignes spécifiques du PPSPS / plan de prévention et la réglementation en vigueur avant toute intervention.
+1. Appuie-toi en priorité sur les FICHES DOCUMENTAIRES fournies dans le contexte.
+2. Si une information n'est pas présente dans les fiches fournies, dis-le clairement au lieu d'inventer.
+3. Réponds en français clair, structuré et actionnable, et rappelle toujours de vérifier le PPSPS / plan de prévention et la réglementation en vigueur.
 """
 
-question = "Quelles sont les précautions de sécurité de base avant de travailler sur une toiture inclinée ?"
 
-# On passe system_instruction dans GenerateContentConfig pour cadrer la réponse du modèle
-# Note : on utilise gemini-3.5-flash car gemini-2.5-flash n'est plus disponible pour les nouveaux comptes
-response = client.models.generate_content(
-    model="gemini-3.5-flash",
-    contents=question,
-    config=types.GenerateContentConfig(
-        system_instruction=SYSTEM_INSTRUCTION,
-        temperature=0.3,  # Température basse pour rester factuel et cadré
-    ),
-)
+def _generer_avec_repli(prompt: str):
+    """Essaie les modèles candidats et bascule si un modèle est temporairement indisponible (503)."""
+    dernier_erreur = None
+    for modele in MODELES_CANDIDATS:
+        try:
+            response = client.models.generate_content(
+                model=modele,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    temperature=0.3,
+                ),
+            )
+            return response, modele
+        except ServerError as err:
+            dernier_erreur = err
+            print(f"[Info] Modèle '{modele}' indisponible ({err.code}), essai du suivant...")
+    raise dernier_erreur
 
-print(response.text)
+
+def repondre_btp(question: str) -> tuple[str, list[dict]]:
+    """Récupère le contexte RAG pertinent puis génère la réponse avec Gemini."""
+    contexte, fiches_utilisees = construire_contexte_rag(question)
+
+    prompt = f"""FICHES DOCUMENTAIRES :
+{contexte}
+
+QUESTION UTILISATEUR :
+{question}
+"""
+
+    response, _modele_utilise = _generer_avec_repli(prompt)
+    return response.text or "", fiches_utilisees
+
+
+if __name__ == "__main__":
+    question_test = "Quelles précautions prendre pour creuser une tranchée sans risque d'éboulement ?"
+    reponse, fiches = repondre_btp(question_test)
+
+    print("Fiches utilisées :", [f["id"] for f in fiches])
+    print("-" * 50)
+    print(reponse)
