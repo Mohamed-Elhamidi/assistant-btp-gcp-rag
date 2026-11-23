@@ -15,3 +15,8 @@ __pycache__/
 .vscode/
 .idea/
 *.swp
+
+# Base de données locale de journalisation
+journal_btp.db
+journal_btp.db-wal
+journal_btp.db-shm

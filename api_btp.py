@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from assistant_btp import repondre_btp
+from journal_btp import enregistrer_echange
 
 app = FastAPI(
     title="Assistant BTP - API RAG",
@@ -42,4 +43,10 @@ def poser_question_api(payload: QuestionRequest):
         )
         for f in fiches
     ]
+
+    enregistrer_echange(
+        question=payload.question,
+        reponse=reponse_texte,
+        fiches=fiches,
+    )
     return ReponseBTP(reponse=reponse_texte, fiches_utilisees=sources)
